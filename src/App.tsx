@@ -4,12 +4,12 @@
  */
 
 import React, { useState, useEffect } from "react";
+import { Menu, Sparkles, Moon, Sun } from "lucide-react";
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./components/Dashboard";
 import UploadData from "./components/UploadData";
 import ShortlinkGenerator from "./components/ShortlinkGenerator";
 import Login from "./components/Login";
-import { Menu, Sparkles } from "lucide-react";
 import { StatsRow } from "./types";
 
 export default function App() {
@@ -28,10 +28,10 @@ export default function App() {
   // USD to IDR rate conversion state
   const [usdRate, setUsdRate] = useState<number>(16300);
 
-  // Data states (Lifting up to enable seamless sharing between Upload & Dashboard)
+  // Core aggregated data state pools
   const [statsRows, setStatsRows] = useState<StatsRow[]>([]);
   const [statsPlatform, setStatsPlatform] = useState<string>("PropellerAds");
-  const [statsFileName, setStatsFileName] = useState<string>("");
+  const [statsFileName, setStatsFileName] = useState<string>("default_stats.csv");
 
   const [clicksMap, setClicksMap] = useState<Record<string, number>>({});
   const [clicksFileName, setClicksFileName] = useState<string>("");
@@ -44,6 +44,9 @@ export default function App() {
 
   const [zonePlatforms, setZonePlatforms] = useState<Record<string, string>>({});
   const [zoneMarkets, setZoneMarkets] = useState<Record<string, Set<string>>>({});
+
+  // Real-time server uploaded files tracker
+  const [uploadedFiles, setUploadedFiles] = useState<any[]>([]);
 
   // Notification Toast state
   const [notif, setNotif] = useState<{ text: string; type: "success" | "info" } | null>(null);
@@ -73,7 +76,6 @@ export default function App() {
           setAuthToken(token);
           setUsername(data.username || "admin");
         } else {
-          // Token is invalid/expired
           localStorage.removeItem("buyer_dashboard_auth_token");
         }
       } catch (err) {
@@ -104,7 +106,114 @@ export default function App() {
     fetchConfig();
   }, []);
 
-  // Apply dark class to document documentElement
+  // Fetch persistent reports history on boot once authenticated
+  useEffect(() => {
+    if (!authToken) return;
+    const fetchUploads = async () => {
+      try {
+        const response = await fetch("/api/uploads", {
+          headers: {
+            "Authorization": `Bearer ${authToken}`
+          }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setUploadedFiles(data || []);
+        }
+      } catch (err) {
+        console.error("Failed to fetch persistent CSV files list:", err);
+      }
+    };
+    fetchUploads();
+  }, [authToken]);
+
+  // Aggregate active uploaded files reactively down to the constituent components
+  useEffect(() => {
+    let statsTemp: StatsRow[] = [];
+    let clicksTemp: Record<string, number> = {};
+    let phTemp: Record<string, { earningsUsd: number; orders: number }> = {};
+    let idTemp: Record<string, { commissionIdr: number; orders: number }> = {};
+    let platformsTemp: Record<string, string> = {};
+    let marketsTemp: Record<string, Set<string>> = {};
+
+    let statsFile = "";
+    let clicksFile = "";
+    let phFile = "";
+    let idFile = "";
+    let statsPlat = "PropellerAds";
+
+    // Trace oldest first so that newer items dynamically overwrite/aggregate correctly
+    const sortedFiles = [...uploadedFiles].reverse();
+
+    sortedFiles.forEach(file => {
+      const type = file.fileType;
+      
+      if (type === "stats") {
+        statsFile = file.filename;
+        statsPlat = file.platform || "PropellerAds";
+        file.data.forEach((row: any) => {
+          const existingIdx = statsTemp.findIndex(r => r.zoneId === row.zoneId);
+          if (existingIdx !== -1) {
+            statsTemp[existingIdx] = row;
+          } else {
+            statsTemp.push(row);
+          }
+          platformsTemp[row.zoneId] = file.platform || "PropellerAds";
+        });
+      }
+
+      else if (type === "clicks") {
+        clicksFile = file.filename;
+        file.data.forEach((row: any) => {
+          clicksTemp[row.zoneId] = (clicksTemp[row.zoneId] || 0) + row.clicks;
+        });
+      }
+
+      else if (type === "shopee_ph") {
+        phFile = file.filename;
+        file.data.forEach((row: any) => {
+          if (!phTemp[row.zoneId]) {
+            phTemp[row.zoneId] = { earningsUsd: 0, orders: 0 };
+          }
+          phTemp[row.zoneId].earningsUsd += row.earningsUsd;
+          phTemp[row.zoneId].orders += row.orders;
+
+          if (!marketsTemp[row.zoneId]) marketsTemp[row.zoneId] = new Set();
+          marketsTemp[row.zoneId].add("ph");
+        });
+      }
+
+      else if (type === "shopee_id") {
+        idFile = file.filename;
+        file.data.forEach((row: any) => {
+          if (!idTemp[row.zoneId]) {
+            idTemp[row.zoneId] = { commissionIdr: 0, orders: 0 };
+          }
+          idTemp[row.zoneId].commissionIdr += row.commissionIdr;
+          idTemp[row.zoneId].orders += row.orders;
+
+          if (!marketsTemp[row.zoneId]) marketsTemp[row.zoneId] = new Set();
+          marketsTemp[row.zoneId].add("id");
+        });
+      }
+    });
+
+    setStatsRows(statsTemp);
+    setClicksMap(clicksTemp);
+    setPhConversionMap(phTemp);
+    setIdCommissionMap(idTemp);
+    setZonePlatforms(platformsTemp);
+    setZoneMarkets(marketsTemp);
+
+    setStatsFileName(statsFile);
+    setClicksFileName(clicksFile);
+    setPhFileName(phFile);
+    setIdFileName(idFile);
+    setStatsPlatform(statsPlat);
+
+  }, [uploadedFiles]);
+
+  // Apply visual theme selection
   useEffect(() => {
     if (darkMode) {
       document.documentElement.classList.add("dark");
@@ -130,92 +239,18 @@ export default function App() {
     setDarkMode(!darkMode);
   };
 
-  const loadMockSampleData = () => {
-    // Stats Mock
-    const mockStats: StatsRow[] = [
-      { zoneId: "2092100", impressions: 154000, clicks: 1210, cost: 308.50 },
-      { zoneId: "2092101", impressions: 85200, clicks: 954, cost: 170.40 },
-      { zoneId: "2092102", impressions: 211000, clicks: 1842, cost: 450.00 },
-      { zoneId: "2092103", impressions: 45000, clicks: 350, cost: 95.20 },
-      { zoneId: "2092104", impressions: 120500, clicks: 1120, cost: 241.00 },
-      { zoneId: "2092105", impressions: 98000, clicks: 880, cost: 205.80 },
-    ];
-
-    // Clicks Mock
-    const mockClicks: Record<string, number> = {
-      "2092100": 1210,
-      "2092101": 954,
-      "2092102": 1842,
-      "2092103": 350,
-      "2092104": 1120,
-      "2092105": 880,
-    };
-
-    // PH (USD Estimated Earnings)
-    const mockPh: Record<string, { earningsUsd: number; orders: number }> = {
-      "2092100": { earningsUsd: 185.00, orders: 12 },
-      "2092102": { earningsUsd: 290.50, orders: 22 },
-      "2092103": { earningsUsd: 42.00, orders: 3 },
-      "2092105": { earningsUsd: 110.00, orders: 9 },
-    };
-
-    // Shopee ID (Rp Direct)
-    const mockId: Record<string, { commissionIdr: number; orders: number }> = {
-      "2092100": { commissionIdr: 2850000, orders: 18 },
-      "2092101": { commissionIdr: 3420000, orders: 21 },
-      "2092102": { commissionIdr: 4950000, orders: 32 },
-      "2092150": { commissionIdr: 580000, orders: 4 }, // No exact stats mapping to test unmatched rows
-    };
-
-    // Assign Platforms
-    const platforms: Record<string, string> = {
-      "2092100": "PropellerAds",
-      "2092101": "Clickadu",
-      "2092102": "PropellerAds",
-      "2092103": "GalaksionAds",
-      "2092104": "Clickadu",
-      "2092105": "GalaksionAds",
-      "2092150": "PropellerAds",
-    };
-
-    // Markets assigned
-    const markets: Record<string, Set<string>> = {
-      "2092100": new Set(["id", "ph"]),
-      "2092101": new Set(["id"]),
-      "2092102": new Set(["id", "ph"]),
-      "2092103": new Set(["ph"]),
-      "2092104": new Set([]),
-      "2092105": new Set(["ph"]),
-      "2092150": new Set(["id"]),
-    };
-
-    setStatsRows(mockStats);
-    setClicksMap(mockClicks);
-    setPhConversionMap(mockPh);
-    setIdCommissionMap(mockId);
-    setZonePlatforms(platforms);
-    setZoneMarkets(markets);
-
-    setStatsFileName("demo_stats.csv");
-    setClicksFileName("demo_website_clicks.csv");
-    setPhFileName("demo_shopee_ph.csv");
-    setIdFileName("demo_shopee_id.csv");
-
-    triggerNotif("Berhasil memproses & memasukkan data simulasi CSV!");
-  };
-
   if (checkingAuth) {
     return (
-      <div id="loader-wrapper" className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400">
+      <div id="loader-wrapper" className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-605 dark:text-slate-400">
         <div className="text-center space-y-4">
           <div className="inline-block relative h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-sm font-semibold tracking-wide font-mono">Securing admin parameters...</p>
+          <p className="text-sm font-semibold tracking-wide font-mono">Securing persistent architecture...</p>
         </div>
       </div>
     );
   }
 
-  // Not authenticated? Prompt Login screen
+  // Session login screen fallback
   if (!authToken) {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors">
@@ -240,7 +275,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Sidebar Navigation */}
+      {/* Sidebar Navigation Panel */}
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -263,18 +298,18 @@ export default function App() {
             <button
               id="mobile-sidebar-hamburger"
               onClick={() => setIsSidebarOpen(true)}
-              className="lg:hidden p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+              className="lg:hidden p-2 text-slate-505 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
               title="Open Navigation Menu"
             >
-              <Menu className="h-5.5 w-5.5" />
+              <span className="font-bold text-lg">☰</span>
             </button>
             
-            {/* Breadcrumbs or header label info */}
+            {/* Page header text detail */}
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-slate-400 uppercase tracking-widest hidden sm:inline">Affiliate Suite</span>
               <span className="text-slate-300 dark:text-slate-700 hidden sm:inline">/</span>
               <span className="text-sm font-bold text-slate-900 dark:text-white tracking-wide uppercase">
-                {activeTab === "dashboard" ? "Dashboard & Hasil" : activeTab === "upload" ? "Upload Data" : "Shortlink Parameters"}
+                {activeTab === "dashboard" ? "Dashboard & Hasil" : activeTab === "upload" ? "Upload Data & Riwayat" : "Shortlink Parameters"}
               </span>
             </div>
           </div>
@@ -321,28 +356,16 @@ export default function App() {
                 usdRate={usdRate}
                 setUsdRate={setUsdRate}
                 statsRows={statsRows}
-                setStatsRows={setStatsRows}
                 statsFileName={statsFileName}
-                setStatsFileName={setStatsFileName}
                 statsPlatform={statsPlatform}
-                setStatsPlatform={setStatsPlatform}
                 clicksMap={clicksMap}
-                setClicksMap={setClicksMap}
                 clicksFileName={clicksFileName}
-                setClicksFileName={setClicksFileName}
                 phConversionMap={phConversionMap}
-                setPhConversionMap={setPhConversionMap}
                 phFileName={phFileName}
-                setPhFileName={setPhFileName}
                 idCommissionMap={idCommissionMap}
-                setIdCommissionMap={setIdCommissionMap}
                 idFileName={idFileName}
-                setIdFileName={setIdFileName}
-                zonePlatforms={zonePlatforms}
-                setZonePlatforms={setZonePlatforms}
-                zoneMarkets={zoneMarkets}
-                setZoneMarkets={setZoneMarkets}
-                loadMockSampleData={loadMockSampleData}
+                uploadedFiles={uploadedFiles}
+                setUploadedFiles={setUploadedFiles}
                 triggerNotif={triggerNotif}
                 authToken={authToken}
               />

@@ -20,6 +20,7 @@ app.use(express.json());
 // In-memory persistence for shortlinks and config
 let shortlinks: any[] = [];
 let globalUsdRate = 16300; // Default sensible conversion rate
+let uploadedFiles: any[] = [];
 
 // Try to load any previously saved shortlinks or configuration from working disk if present
 const DATA_FILE = path.join(process.cwd(), "dashboard_data.json");
@@ -33,6 +34,9 @@ if (fs.existsSync(DATA_FILE)) {
     if (typeof data.globalUsdRate === "number") {
       globalUsdRate = data.globalUsdRate;
     }
+    if (Array.isArray(data.uploadedFiles)) {
+      uploadedFiles = data.uploadedFiles;
+    }
   } catch (err) {
     console.error("Could not parse existing database file:", err);
   }
@@ -40,7 +44,7 @@ if (fs.existsSync(DATA_FILE)) {
 
 function saveData() {
   try {
-    fs.writeFileSync(DATA_FILE, JSON.stringify({ shortlinks, globalUsdRate }, null, 2), "utf-8");
+    fs.writeFileSync(DATA_FILE, JSON.stringify({ shortlinks, globalUsdRate, uploadedFiles }, null, 2), "utf-8");
   } catch (err) {
     console.log("Could not save persistent database:", err);
   }
@@ -135,6 +139,50 @@ app.post("/api/config", requireAuth, (req, res) => {
   } else {
     res.status(400).json({ error: "Invalid exchange rate parsed." });
   }
+});
+
+// API Endpoint - Fetch Uploaded Files History
+app.get("/api/uploads", requireAuth, (req, res) => {
+  res.json(uploadedFiles);
+});
+
+// API Endpoint - Add a parsed CSV File
+app.post("/api/uploads", requireAuth, (req, res) => {
+  const { filename, fileType, rowCount, platform, data } = req.body;
+
+  if (!filename || !fileType || !Array.isArray(data)) {
+    res.status(400).json({ error: "Missing required file elements." });
+    return;
+  }
+
+  const payload = {
+    id: `file-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    filename,
+    fileType,
+    rowCount: rowCount || data.length,
+    platform: platform || "PropellerAds",
+    uploadedAt: new Date().toISOString(),
+    data,
+  };
+
+  uploadedFiles.unshift(payload);
+  saveData();
+  res.status(201).json(uploadedFiles);
+});
+
+// API Endpoint - Delete an uploaded file by ID
+app.delete("/api/uploads/:id", requireAuth, (req, res) => {
+  const { id } = req.params;
+  const initialLength = uploadedFiles.length;
+  uploadedFiles = uploadedFiles.filter((item: any) => item.id !== id);
+
+  if (uploadedFiles.length === initialLength) {
+    res.status(404).json({ error: "File record not found." });
+    return;
+  }
+
+  saveData();
+  res.json({ success: true, files: uploadedFiles });
 });
 
 // Redirect endpoint for generated tracker link

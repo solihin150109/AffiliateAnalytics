@@ -46,7 +46,7 @@ export default function Sidebar({
     },
     {
       id: "upload" as const,
-      label: "Upload Data",
+      label: "Upload & Riwayat",
       icon: Upload,
     },
     {
