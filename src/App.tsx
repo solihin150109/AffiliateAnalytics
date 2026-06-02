@@ -127,6 +127,27 @@ export default function App() {
     fetchUploads();
   }, [authToken]);
 
+  const handleDeleteZone = async (zoneId: string) => {
+    try {
+      const response = await fetch(`/api/zones/${zoneId}`, {
+        method: "DELETE",
+        headers: {
+          "Authorization": `Bearer ${authToken}`
+        }
+      });
+      if (response.ok) {
+        const result = await response.json();
+        setUploadedFiles(result.files || []);
+        triggerNotif(`Berhasil: Data untuk Zone ID "${zoneId}" telah dihapus sepenuhnya.`);
+      } else {
+        triggerNotif(`Gagal menghapus data Zone ID ${zoneId}.`, "info");
+      }
+    } catch (err) {
+      console.error(err);
+      triggerNotif("Koneksi gagal menghubungi server delete.", "info");
+    }
+  };
+
   // Aggregate active uploaded files reactively down to the constituent components
   useEffect(() => {
     let statsTemp: StatsRow[] = [];
@@ -194,6 +215,60 @@ export default function App() {
 
           if (!marketsTemp[row.zoneId]) marketsTemp[row.zoneId] = new Set();
           marketsTemp[row.zoneId].add("id");
+        });
+      }
+
+      else if (type === "manual") {
+        file.data.forEach((row: any) => {
+          const existingIdx = statsTemp.findIndex(r => r.zoneId === row.zoneId);
+          const statsRowObj = {
+            zoneId: row.zoneId,
+            impressions: Number(row.impressions) || 0,
+            clicks: Number(row.statsClicks) || Number(row.clicks) || 0,
+            cost: Number(row.costUsd) || 0,
+          };
+          if (existingIdx !== -1) {
+            statsTemp[existingIdx] = statsRowObj;
+          } else {
+            statsTemp.push(statsRowObj);
+          }
+          platformsTemp[row.zoneId] = row.platform || "PropellerAds";
+
+          // tracker clicks
+          clicksTemp[row.zoneId] = (clicksTemp[row.zoneId] || 0) + (Number(row.clicks) || 0);
+
+          // ph commission
+          const commUsd = Number(row.commissionUsd) || 0;
+          if (commUsd > 0) {
+            if (!phTemp[row.zoneId]) {
+              phTemp[row.zoneId] = { earningsUsd: 0, orders: 0 };
+            }
+            phTemp[row.zoneId].earningsUsd += commUsd;
+            phTemp[row.zoneId].orders += Number(row.orders) || 1;
+
+            if (!marketsTemp[row.zoneId]) marketsTemp[row.zoneId] = new Set();
+            marketsTemp[row.zoneId].add("ph");
+          }
+
+          // id commission
+          const commIdr = Number(row.commissionIdr) || 0;
+          if (commIdr > 0) {
+            if (!idTemp[row.zoneId]) {
+              idTemp[row.zoneId] = { commissionIdr: 0, orders: 0 };
+            }
+            idTemp[row.zoneId].commissionIdr += commIdr;
+            idTemp[row.zoneId].orders += Number(row.orders) || 1;
+
+            if (!marketsTemp[row.zoneId]) marketsTemp[row.zoneId] = new Set();
+            marketsTemp[row.zoneId].add("id");
+          }
+
+          // explicit manual market tags fallback
+          if (row.market) {
+            if (!marketsTemp[row.zoneId]) marketsTemp[row.zoneId] = new Set();
+            if (row.market.toLowerCase().includes("id")) marketsTemp[row.zoneId].add("id");
+            if (row.market.toLowerCase().includes("ph")) marketsTemp[row.zoneId].add("ph");
+          }
         });
       }
     });
@@ -350,6 +425,7 @@ export default function App() {
                 zonePlatforms={zonePlatforms}
                 zoneMarkets={zoneMarkets}
                 setActiveTab={setActiveTab}
+                onDeleteZone={handleDeleteZone}
               />
             ) : activeTab === "upload" ? (
               <UploadData

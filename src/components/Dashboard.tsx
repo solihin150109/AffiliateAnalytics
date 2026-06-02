@@ -41,6 +41,7 @@ interface DashboardProps {
   zonePlatforms: Record<string, string>;
   zoneMarkets: Record<string, Set<string>>;
   setActiveTab: (tab: "dashboard" | "upload" | "shortlink") => void;
+  onDeleteZone?: (zoneId: string) => Promise<void>;
 }
 
 export default function Dashboard({
@@ -60,6 +61,7 @@ export default function Dashboard({
   zonePlatforms,
   zoneMarkets,
   setActiveTab,
+  onDeleteZone,
 }: DashboardProps) {
 
   // Filters state
@@ -634,6 +636,11 @@ export default function Dashboard({
                     <ArrowUpDown className="h-3 w-3" />
                   </div>
                 </th>
+                {onDeleteZone && (
+                  <th className="px-6 py-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase text-right">
+                    AKSI
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
@@ -684,12 +691,27 @@ export default function Dashboard({
                           <span className="text-slate-400 text-[9px] font-mono">({ratio.toFixed(4)}%)</span>
                         </div>
                       </td>
+                      {onDeleteZone && (
+                        <td className="px-6 py-3.5 text-right">
+                          <button
+                            onClick={() => {
+                              if (window.confirm(`Apakah Anda yakin ingin menghapus seluruh data untuk Zone ID "${row.zoneId}" secara permanen?`)) {
+                                onDeleteZone(row.zoneId);
+                              }
+                            }}
+                            className="p-1 px-2.2 bg-rose-55 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-955/40 text-rose-600 dark:text-rose-400 rounded-lg border border-rose-200 dark:border-rose-900/40 text-[10px] font-bold cursor-pointer transition-all inline-flex items-center gap-1"
+                            title="Hapus baris data ini"
+                          >
+                            <span>Hapus</span>
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   );
                 })
               ) : (
                 <tr>
-                  <td colSpan={10} className="px-6 py-16 text-center text-slate-400 text-sm">
+                  <td colSpan={onDeleteZone ? 11 : 10} className="px-6 py-16 text-center text-slate-400 text-sm">
                     {statsRows.length === 0 ? (
                       <div className="flex flex-col items-center justify-center p-8 text-center max-w-sm mx-auto space-y-4">
                         <div className="p-3.5 bg-blue-50 dark:bg-slate-950 border border-blue-100 dark:border-blue-900 rounded-full text-blue-500">

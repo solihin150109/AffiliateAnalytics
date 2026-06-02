@@ -89,6 +89,71 @@ export default function UploadData({
   const [stagedPh, setStagedPh] = useState<{ filename: string; rowCount: number; data: any[] } | null>(null);
   const [stagedId, setStagedId] = useState<{ filename: string; rowCount: number; data: any[] } | null>(null);
 
+  // Manual input form states
+  const [manualZoneId, setManualZoneId] = useState("");
+  const [manualPlatform, setManualPlatform] = useState("PropellerAds");
+  const [manualMarket, setManualMarket] = useState("id");
+  const [manualImpressions, setManualImpressions] = useState("");
+  const [manualClicks, setManualClicks] = useState("");
+  const [manualCostUsd, setManualCostUsd] = useState("");
+  const [manualCommissionIdr, setManualCommissionIdr] = useState("");
+  const [manualCommissionUsd, setManualCommissionUsd] = useState("");
+  const [manualOrders, setManualOrders] = useState("");
+  const [isSavingManual, setIsSavingManual] = useState(false);
+
+  const handleSaveManual = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualZoneId.trim()) {
+      triggerNotif("Kesalahan: ID Zone tidak boleh kosong.", "info");
+      return;
+    }
+
+    setIsSavingManual(true);
+    try {
+      const response = await fetch("/api/manual-entry", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${authToken}`
+        },
+        body: JSON.stringify({
+          zoneId: manualZoneId.trim(),
+          platform: manualPlatform,
+          market: manualMarket,
+          impressions: manualImpressions ? parseInt(manualImpressions) : 0,
+          clicks: manualClicks ? parseInt(manualClicks) : 0,
+          costUsd: manualCostUsd ? parseFloat(manualCostUsd) : 0,
+          commissionIdr: manualCommissionIdr ? parseFloat(manualCommissionIdr) : 0,
+          commissionUsd: manualCommissionUsd ? parseFloat(manualCommissionUsd) : 0,
+          orders: manualOrders ? parseInt(manualOrders) : 1,
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setUploadedFiles(result.files || []);
+        triggerNotif(`Berhasil: Menyimpan data manual untuk Zone ID "${manualZoneId}".`);
+        
+        // Reset inputs
+        setManualZoneId("");
+        setManualImpressions("");
+        setManualClicks("");
+        setManualCostUsd("");
+        setManualCommissionIdr("");
+        setManualCommissionUsd("");
+        setManualOrders("");
+      } else {
+        const errObj = await response.json();
+        triggerNotif(errObj.error || "Gagal menyimpan data manual.", "info");
+      }
+    } catch (err) {
+      console.error(err);
+      triggerNotif("Koneksi gagal saat menyimpan data manual.", "info");
+    } finally {
+      setIsSavingManual(false);
+    }
+  };
+
   // 1. Stats File local parser (Staged stage)
   const handleStatsUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -357,8 +422,11 @@ export default function UploadData({
         return norm.includes("taglink1") || norm.includes("tag1") || norm.includes("taglink");
       }) || "";
 
-      // Prioritize "Komisi Shopee per Pesanan(Rp)" matching perfectly
+      // Prioritize "Komisi Bersih Affiliate (Rp)" or similar Clean Affiliate commissions
       let commCol = parsed.headers.find(h => {
+        const norm = h.toLowerCase().replace(/[\s_-]/g, "");
+        return norm.includes("komisibersih") || norm.includes("bersihaffiliate");
+      }) || parsed.headers.find(h => {
         const norm = h.toLowerCase().replace(/[\s_-]/g, "");
         return norm.includes("shopeeperpesanan") || norm.includes("komisishopee") || norm.includes("totalkomisi") || norm.includes("komisi") || norm.includes("commission") || norm.includes("rp");
       }) || "";
@@ -622,33 +690,44 @@ export default function UploadData({
             </div>
           </div>
  
-          <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-            {statsFileName ? (
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 font-mono truncate max-w-[70%]">
-                  <FileText className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                  <span className="truncate text-emerald-650 dark:text-emerald-400 font-semibold">{statsFileName} [Aktif di DB]</span>
+          <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 space-y-4">
+            {/* List of active files of this type */}
+            {uploadedFiles.filter(f => f.fileType === "stats").length > 0 && (
+              <div className="space-y-2">
+                <p className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider">File Aktif di Database ({uploadedFiles.filter(f => f.fileType === "stats").length})</p>
+                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                  {uploadedFiles.filter(f => f.fileType === "stats").map((file) => (
+                    <div key={file.id} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-950/40 border border-slate-150 dark:border-slate-850/60 rounded-xl gap-2">
+                      <div className="flex items-center gap-2 text-xs truncate max-w-[75%]">
+                        <FileText className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                        <div className="truncate font-mono">
+                          <p className="truncate font-bold text-slate-705 dark:text-slate-300" title={file.filename}>{file.filename}</p>
+                          <p className="text-[10px] text-slate-500">{file.rowCount} baris • {file.platform || "PropellerAds"}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteFile(file.id, file.filename)}
+                        className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded cursor-pointer transition-all"
+                        title="Hapus file ini"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
-                <button
-                  id="clear-stats-btn"
-                  onClick={() => handleClearSlot(1)}
-                  className="p-1 px-2.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/40 rounded-lg cursor-pointer text-[10px] font-bold inline-flex items-center gap-1 transition-all"
-                  title="Hapus laporan aktif ini"
-                >
-                  <Trash2 className="h-3 w-3 shrink-0" />
-                  <span>Hapus</span>
-                </button>
               </div>
-            ) : stagedStats ? (
+            )}
+
+            {stagedStats ? (
               <div className="space-y-3">
                 <div className="p-3 bg-blue-50/50 dark:bg-blue-950/10 border border-blue-100 dark:border-blue-900/30 rounded-xl flex items-center justify-between">
                   <div className="truncate max-w-[80%] space-y-0.5">
                     <p className="text-[11px] font-bold text-blue-600 dark:text-blue-400 font-mono truncate">{stagedStats.filename}</p>
-                    <p className="text-[10px] text-slate-505 dark:text-slate-400 font-mono">{stagedStats.rowCount} baris terbaca</p>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">{stagedStats.rowCount} baris terbaca</p>
                   </div>
                   <button
                     onClick={() => setStagedStats(null)}
-                    className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-slate-650 text-sm font-bold cursor-pointer"
+                    className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-slate-655 text-sm font-bold cursor-pointer"
                     title="Batal"
                   >
                     ×
@@ -678,13 +757,13 @@ export default function UploadData({
                   className="w-full flex items-center justify-center gap-2 py-2 px-3 border border-dashed border-slate-300 dark:border-slate-750 hover:border-blue-500 dark:hover:border-blue-400 rounded-xl text-xs font-semibold text-slate-650 dark:text-slate-400 hover:text-blue-650 dark:hover:text-blue-400 bg-slate-50 dark:bg-slate-950/20 cursor-pointer transition-all"
                 >
                   <Upload className="h-3.5 w-3.5" />
-                  <span>Pilih File CSV</span>
+                  <span>Pilih File CSV Baru</span>
                 </button>
               </div>
             )}
           </div>
         </div>
- 
+
         {/* Slot 2: External tracker clicks report */}
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm transition-colors flex flex-col justify-between">
           <div>
@@ -700,33 +779,44 @@ export default function UploadData({
             </p>
           </div>
  
-          <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-            {clicksFileName ? (
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 font-mono truncate max-w-[70%]">
-                  <FileText className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                  <span className="truncate text-emerald-650 dark:text-emerald-400 font-semibold">{clicksFileName} [Aktif di DB]</span>
+          <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 space-y-4">
+            {/* List of active files of this type */}
+            {uploadedFiles.filter(f => f.fileType === "clicks").length > 0 && (
+              <div className="space-y-2">
+                <p className="text-[10px] font-extrabold text-slate-450 dark:text-slate-500 uppercase tracking-wider">File Aktif di Database ({uploadedFiles.filter(f => f.fileType === "clicks").length})</p>
+                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                  {uploadedFiles.filter(f => f.fileType === "clicks").map((file) => (
+                    <div key={file.id} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-950/40 border border-slate-150 dark:border-slate-850/60 rounded-xl gap-2">
+                      <div className="flex items-center gap-2 text-xs truncate max-w-[75%]">
+                        <FileText className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                        <div className="truncate font-mono">
+                          <p className="truncate font-bold text-slate-705 dark:text-slate-300" title={file.filename}>{file.filename}</p>
+                          <p className="text-[10px] text-slate-500">{file.rowCount} zone dicocokkan</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteFile(file.id, file.filename)}
+                        className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded cursor-pointer transition-all"
+                        title="Hapus file ini"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
-                <button
-                  id="clear-clicks-btn"
-                  onClick={() => handleClearSlot(2)}
-                  className="p-1 px-2.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/40 rounded-lg cursor-pointer text-[10px] font-bold inline-flex items-center gap-1 transition-all"
-                  title="Hapus laporan aktif ini"
-                >
-                  <Trash2 className="h-3 w-3 shrink-0" />
-                  <span>Hapus</span>
-                </button>
               </div>
-            ) : stagedClicks ? (
+            )}
+
+            {stagedClicks ? (
               <div className="space-y-3">
                 <div className="p-3 bg-emerald-50/50 dark:bg-emerald-950/10 border border-emerald-100 dark:border-emerald-900/30 rounded-xl flex items-center justify-between">
                   <div className="truncate max-w-[80%] space-y-0.5">
                     <p className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 font-mono truncate">{stagedClicks.filename}</p>
-                    <p className="text-[10px] text-slate-505 dark:text-slate-400 font-mono">{stagedClicks.rowCount} zone dicocokkan</p>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">{stagedClicks.rowCount} zone dicocokkan</p>
                   </div>
                   <button
                     onClick={() => setStagedClicks(null)}
-                    className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-slate-650 text-sm font-bold cursor-pointer"
+                    className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-slate-655 text-sm font-bold cursor-pointer"
                     title="Batal"
                   >
                     ×
@@ -756,7 +846,7 @@ export default function UploadData({
                   className="w-full flex items-center justify-center gap-2 py-2 px-3 border border-dashed border-slate-300 dark:border-slate-750 hover:border-blue-500 dark:hover:border-blue-400 rounded-xl text-xs font-semibold text-slate-650 dark:text-slate-400 hover:text-blue-650 dark:hover:text-blue-400 bg-slate-50 dark:bg-slate-950/20 cursor-pointer transition-all"
                 >
                   <Upload className="h-3.5 w-3.5" />
-                  <span>Pilih File CSV</span>
+                  <span>Pilih File CSV Baru</span>
                 </button>
               </div>
             )}
@@ -774,37 +864,48 @@ export default function UploadData({
             </div>
             <h3 className="font-bold text-sm text-slate-900 dark:text-white mt-3 uppercase">3. SHOPEE PH COMMISSION (EST USD)</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-              Laporan konversi Shopee PH: <span className="font-mono text-blue-500 dark:text-blue-400 bg-slate-50 dark:bg-slate-950/40 px-1 py-0.5 rounded">Publisher Sub ID 1, Estimated Earnings (USD)</span>.
+               Laporan konversi Shopee PH: <span className="font-mono text-blue-500 dark:text-blue-400 bg-slate-50 dark:bg-slate-950/40 px-1 py-0.5 rounded">Publisher Sub ID 1, Estimated Earnings (USD)</span>.
             </p>
           </div>
  
-          <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-            {phFileName ? (
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 font-mono truncate max-w-[70%]">
-                  <FileText className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                  <span className="truncate text-emerald-650 dark:text-emerald-400 font-semibold">{phFileName} [Aktif di DB]</span>
+          <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 space-y-4">
+            {/* List of active files of this type */}
+            {uploadedFiles.filter(f => f.fileType === "shopee_ph").length > 0 && (
+              <div className="space-y-2">
+                <p className="text-[10px] font-extrabold text-slate-450 dark:text-slate-500 uppercase tracking-wider">File Aktif di Database ({uploadedFiles.filter(f => f.fileType === "shopee_ph").length})</p>
+                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                  {uploadedFiles.filter(f => f.fileType === "shopee_ph").map((file) => (
+                    <div key={file.id} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-950/40 border border-slate-150 dark:border-slate-850/60 rounded-xl gap-2">
+                      <div className="flex items-center gap-2 text-xs truncate max-w-[75%]">
+                        <FileText className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                        <div className="truncate font-mono">
+                          <p className="truncate font-bold text-slate-705 dark:text-slate-300" title={file.filename}>{file.filename}</p>
+                          <p className="text-[10px] text-slate-500">{file.rowCount} baris terbaca</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteFile(file.id, file.filename)}
+                        className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded cursor-pointer transition-all"
+                        title="Hapus file ini"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
-                <button
-                  id="clear-ph-btn"
-                  onClick={() => handleClearSlot(3)}
-                  className="p-1 px-2.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/40 rounded-lg cursor-pointer text-[10px] font-bold inline-flex items-center gap-1 transition-all"
-                  title="Hapus laporan aktif ini"
-                >
-                  <Trash2 className="h-3 w-3 shrink-0" />
-                  <span>Hapus</span>
-                </button>
               </div>
-            ) : stagedPh ? (
+            )}
+
+            {stagedPh ? (
               <div className="space-y-3">
                 <div className="p-3 bg-amber-50/50 dark:bg-amber-950/10 border border-amber-100 dark:border-amber-900/30 rounded-xl flex items-center justify-between">
                   <div className="truncate max-w-[80%] space-y-0.5">
                     <p className="text-[11px] font-bold text-amber-600 dark:text-amber-400 font-mono truncate">{stagedPh.filename}</p>
-                    <p className="text-[10px] text-slate-505 dark:text-slate-400 font-mono">{stagedPh.rowCount} baris terbaca</p>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">{stagedPh.rowCount} baris terbaca</p>
                   </div>
                   <button
                     onClick={() => setStagedPh(null)}
-                    className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-slate-650 text-sm font-bold cursor-pointer"
+                    className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-slate-655 text-sm font-bold cursor-pointer"
                     title="Batal"
                   >
                     ×
@@ -834,7 +935,7 @@ export default function UploadData({
                   className="w-full flex items-center justify-center gap-2 py-2 px-3 border border-dashed border-slate-300 dark:border-slate-750 hover:border-blue-500 dark:hover:border-blue-400 rounded-xl text-xs font-semibold text-slate-650 dark:text-slate-400 hover:text-blue-650 dark:hover:text-blue-400 bg-slate-50 dark:bg-slate-950/20 cursor-pointer transition-all"
                 >
                   <Upload className="h-3.5 w-3.5" />
-                  <span>Pilih File CSV</span>
+                  <span>Pilih File CSV Baru</span>
                 </button>
               </div>
             )}
@@ -856,33 +957,44 @@ export default function UploadData({
             </p>
           </div>
  
-          <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-            {idFileName ? (
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 font-mono truncate max-w-[70%]">
-                  <FileText className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                  <span className="truncate text-emerald-650 dark:text-emerald-400 font-semibold">{idFileName} [Aktif di DB]</span>
+          <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 space-y-4">
+            {/* List of active files of this type */}
+            {uploadedFiles.filter(f => f.fileType === "shopee_id").length > 0 && (
+              <div className="space-y-2">
+                <p className="text-[10px] font-extrabold text-slate-450 dark:text-slate-500 uppercase tracking-wider">File Aktif di Database ({uploadedFiles.filter(f => f.fileType === "shopee_id").length})</p>
+                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                  {uploadedFiles.filter(f => f.fileType === "shopee_id").map((file) => (
+                    <div key={file.id} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-950/40 border border-slate-150 dark:border-slate-850/60 rounded-xl gap-2">
+                      <div className="flex items-center gap-2 text-xs truncate max-w-[75%]">
+                        <FileText className="h-3.5 w-3.5 text-pink-500 shrink-0" />
+                        <div className="truncate font-mono">
+                          <p className="truncate font-bold text-slate-705 dark:text-slate-300" title={file.filename}>{file.filename}</p>
+                          <p className="text-[10px] text-slate-505 dark:text-slate-400 font-mono">{file.rowCount} baris terbaca</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteFile(file.id, file.filename)}
+                        className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded cursor-pointer transition-all"
+                        title="Hapus file ini"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
-                <button
-                  id="clear-id-btn"
-                  onClick={() => handleClearSlot(4)}
-                  className="p-1 px-2.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/40 rounded-lg cursor-pointer text-[10px] font-bold inline-flex items-center gap-1 transition-all"
-                  title="Hapus laporan aktif ini"
-                >
-                  <Trash2 className="h-3 w-3 shrink-0" />
-                  <span>Hapus</span>
-                </button>
               </div>
-            ) : stagedId ? (
+            )}
+
+            {stagedId ? (
               <div className="space-y-3">
                 <div className="p-3 bg-pink-50/50 dark:bg-pink-950/10 border border-pink-100 dark:border-pink-900/30 rounded-xl flex items-center justify-between">
                   <div className="truncate max-w-[80%] space-y-0.5">
                     <p className="text-[11px] font-bold text-pink-600 dark:text-pink-400 font-mono truncate">{stagedId.filename}</p>
-                    <p className="text-[10px] text-slate-505 dark:text-slate-400 font-mono">{stagedId.rowCount} baris terbaca</p>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">{stagedId.rowCount} baris terbaca</p>
                   </div>
                   <button
                     onClick={() => setStagedId(null)}
-                    className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-slate-650 text-sm font-bold cursor-pointer"
+                    className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-slate-655 text-sm font-bold cursor-pointer"
                     title="Batal"
                   >
                     ×
@@ -912,13 +1024,158 @@ export default function UploadData({
                   className="w-full flex items-center justify-center gap-2 py-2 px-3 border border-dashed border-slate-300 dark:border-slate-750 hover:border-blue-500 dark:hover:border-blue-400 rounded-xl text-xs font-semibold text-slate-650 dark:text-slate-400 hover:text-blue-650 dark:hover:text-blue-400 bg-slate-50 dark:bg-slate-950/20 cursor-pointer transition-all"
                 >
                   <Upload className="h-3.5 w-3.5" />
-                  <span>Pilih File CSV</span>
+                  <span>Pilih File CSV Baru</span>
                 </button>
               </div>
             )}
           </div>
         </div>
  
+      </div>
+
+      {/* Manual Input Form */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm transition-all" id="manual-data-entry-form">
+        <div className="flex items-center gap-2 pb-4 mb-5 border-b border-slate-100 dark:border-slate-800/80">
+          <Sparkles className="h-5 w-5 text-blue-500 animate-pulse shrink-0" />
+          <div>
+            <h3 className="font-bold text-sm text-slate-900 dark:text-white uppercase tracking-tight">Formulir Input Data Zone Manual</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Gunakan form di bawah ini untuk menginput, memperbarui, atau menyunting metrik zone ID secara langsung tanpa harus membuat file CSV.
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSaveManual} className="space-y-4 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            
+            <div className="space-y-1.5">
+              <label className="block text-slate-500 dark:text-slate-450 font-bold uppercase tracking-wider">ID Zone / Tag Link*</label>
+              <input
+                type="text"
+                required
+                value={manualZoneId}
+                onChange={(e) => setManualZoneId(e.target.value)}
+                placeholder="Contoh: 10993873"
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:border-blue-550 dark:focus:border-blue-400 focus:outline-none rounded-xl px-3 py-2 font-mono text-slate-900 dark:text-white font-bold"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-slate-500 dark:text-slate-450 font-bold uppercase tracking-wider">DSP Ad Network Platform</label>
+              <select
+                value={manualPlatform}
+                onChange={(e) => setManualPlatform(e.target.value)}
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:outline-none rounded-xl px-3 py-2 text-slate-700 dark:text-slate-350 font-bold"
+              >
+                <option value="PropellerAds">PropellerAds</option>
+                <option value="Clickadu">Clickadu</option>
+                <option value="GalaksionAds">GalaksionAds</option>
+                <option value="HilltopAds">HilltopAds</option>
+                <option value="OtherDSP">Other DSP</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-slate-500 dark:text-slate-450 font-bold uppercase tracking-wider">Target Market Sasar</label>
+              <select
+                value={manualMarket}
+                onChange={(e) => setManualMarket(e.target.value)}
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:outline-none rounded-xl px-3 py-2 text-slate-700 dark:text-slate-350 font-bold"
+              >
+                <option value="id">Indonesia (ID - Shopee Rp)</option>
+                <option value="ph">Philippines (PH - Shopee $)</option>
+                <option value="both">Both (ID + PH)</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-slate-500 dark:text-slate-450 font-bold uppercase tracking-wider">Impresi (Impressions)</label>
+              <input
+                type="number"
+                min="0"
+                value={manualImpressions}
+                onChange={(e) => setManualImpressions(e.target.value)}
+                placeholder="Contoh: 150000"
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:outline-none rounded-xl px-3 py-2 font-mono text-slate-900 dark:text-white"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-slate-500 dark:text-slate-450 font-bold uppercase tracking-wider">Klik Tracker Website</label>
+              <input
+                type="number"
+                min="0"
+                value={manualClicks}
+                onChange={(e) => setManualClicks(e.target.value)}
+                placeholder="Contoh: 320"
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:outline-none rounded-xl px-3 py-2 font-mono text-slate-900 dark:text-white"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-slate-500 dark:text-slate-450 font-bold uppercase tracking-wider">Ad Spend / Cost (USD)</label>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                value={manualCostUsd}
+                onChange={(e) => setManualCostUsd(e.target.value)}
+                placeholder="Contoh: 24.50"
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:outline-none rounded-xl px-3 py-2 font-mono text-slate-900 dark:text-white"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-slate-500 dark:text-slate-450 font-bold uppercase tracking-wider">Komisi Bersih Shopee ID (Rp)</label>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                value={manualCommissionIdr}
+                onChange={(e) => setManualCommissionIdr(e.target.value)}
+                placeholder="Contoh: 280000"
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:outline-none rounded-xl px-3 py-2 font-mono text-slate-900 dark:text-white font-bold"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-slate-500 dark:text-slate-450 font-bold uppercase tracking-wider">Komisi Shopee PH (USD $)</label>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                value={manualCommissionUsd}
+                onChange={(e) => setManualCommissionUsd(e.target.value)}
+                placeholder="Contoh: 18.2"
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:outline-none rounded-xl px-3 py-2 font-mono text-slate-900 dark:text-white"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-slate-500 dark:text-slate-450 font-bold uppercase tracking-wider">Jumlah Orders / Konversi</label>
+              <input
+                type="number"
+                min="0"
+                value={manualOrders}
+                onChange={(e) => setManualOrders(e.target.value)}
+                placeholder="Default: 1"
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:outline-none rounded-xl px-3 py-2 font-mono text-slate-900 dark:text-white"
+              />
+            </div>
+
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <button
+              type="submit"
+              disabled={isSavingManual}
+              className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold rounded-xl shadow-md cursor-pointer transition-all"
+            >
+              <Database className="h-4 w-4" />
+              <span>{isSavingManual ? "Menyimpan data..." : "Simpan Data Manual ke Database"}</span>
+            </button>
+          </div>
+        </form>
       </div>
 
       {/* 5. TABLE: Riwayat Unggahan Laporan / File History registry */}
@@ -963,6 +1220,9 @@ export default function UploadData({
                   } else if (file.fileType === "shopee_id") {
                     badgeColor = "bg-pink-50 dark:bg-pink-955/40 text-pink-700 dark:text-pink-350";
                     categoryLabel = "Shopee Indonesia (ID)";
+                  } else if (file.fileType === "manual") {
+                    badgeColor = "bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300";
+                    categoryLabel = "Input Manual (Formulir)";
                   }
 
                   return (
