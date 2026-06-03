@@ -89,6 +89,10 @@ export default function UploadData({
   const [stagedPh, setStagedPh] = useState<{ filename: string; rowCount: number; data: any[] } | null>(null);
   const [stagedId, setStagedId] = useState<{ filename: string; rowCount: number; data: any[] } | null>(null);
 
+  // Tab and confirmation states
+  const [activeSubTab, setActiveSubTab] = useState<"csv" | "manual">("csv");
+  const [showResetConfirmation, setShowResetConfirmation] = useState(false);
+
   // Manual input form states
   const [manualZoneId, setManualZoneId] = useState("");
   const [manualPlatform, setManualPlatform] = useState("PropellerAds");
@@ -103,8 +107,9 @@ export default function UploadData({
 
   const handleSaveManual = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!manualZoneId.trim()) {
-      triggerNotif("Kesalahan: ID Zone tidak boleh kosong.", "info");
+    const cleanZoneId = extractZoneId(manualZoneId);
+    if (!cleanZoneId) {
+      triggerNotif("Kesalahan: ID Zone tidak valid (harus mengandung angka).", "info");
       return;
     }
 
@@ -117,7 +122,7 @@ export default function UploadData({
           "Authorization": `Bearer ${authToken}`
         },
         body: JSON.stringify({
-          zoneId: manualZoneId.trim(),
+          zoneId: cleanZoneId,
           platform: manualPlatform,
           market: manualMarket,
           impressions: manualImpressions ? parseInt(manualImpressions) : 0,
@@ -539,10 +544,6 @@ export default function UploadData({
 
   // Clear all uploaded datasets recursively
   const clearAllData = async () => {
-    if (!window.confirm("Apakah Anda yakin ingin menghapus semua laporan dan mereset total konsolidasi?")) {
-      return;
-    }
-
     try {
       for (const item of uploadedFiles) {
         await fetch(`/api/uploads/${item.id}`, {
@@ -587,7 +588,7 @@ export default function UploadData({
         <div className="flex flex-wrap items-center gap-2">
           {isAnyFileLoaded && (
             <button
-              onClick={clearAllData}
+              onClick={() => setShowResetConfirmation(true)}
               className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 border border-rose-200 dark:border-rose-900/50 rounded-lg cursor-pointer transition-all"
               title="Clear all uploaded data"
             >
@@ -656,8 +657,32 @@ export default function UploadData({
         ))}
       </div>
 
-      {/* 4. Interactive File Selection Slots */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6" id="slots-upload-cards-grid">
+      {/* Sub-tab navigation to separate CSV Upload and Manual Input */}
+      <div className="flex border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-xl p-1 gap-1" id="import-type-subtabs">
+        <button
+          onClick={() => setActiveSubTab("csv")}
+          className={`flex-1 py-2.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer text-center ${
+            activeSubTab === "csv"
+              ? "bg-blue-600 text-white shadow-xs"
+              : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-850"
+          }`}
+        >
+          Unggah File CSV (Laporan)
+        </button>
+        <button
+          onClick={() => setActiveSubTab("manual")}
+          className={`flex-1 py-2.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer text-center ${
+            activeSubTab === "manual"
+              ? "bg-blue-600 text-white shadow-xs"
+              : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-850"
+          }`}
+        >
+          Input Manual (Formulir)
+        </button>
+      </div>
+
+      {activeSubTab === "csv" && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6" id="slots-upload-cards-grid">
         
         {/* Slot 1: Stats ad expenditure report */}
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm transition-colors flex flex-col justify-between">
@@ -691,32 +716,6 @@ export default function UploadData({
           </div>
  
           <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 space-y-4">
-            {/* List of active files of this type */}
-            {uploadedFiles.filter(f => f.fileType === "stats").length > 0 && (
-              <div className="space-y-2">
-                <p className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider">File Aktif di Database ({uploadedFiles.filter(f => f.fileType === "stats").length})</p>
-                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                  {uploadedFiles.filter(f => f.fileType === "stats").map((file) => (
-                    <div key={file.id} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-950/40 border border-slate-150 dark:border-slate-850/60 rounded-xl gap-2">
-                      <div className="flex items-center gap-2 text-xs truncate max-w-[75%]">
-                        <FileText className="h-3.5 w-3.5 text-blue-500 shrink-0" />
-                        <div className="truncate font-mono">
-                          <p className="truncate font-bold text-slate-705 dark:text-slate-300" title={file.filename}>{file.filename}</p>
-                          <p className="text-[10px] text-slate-500">{file.rowCount} baris • {file.platform || "PropellerAds"}</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleDeleteFile(file.id, file.filename)}
-                        className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded cursor-pointer transition-all"
-                        title="Hapus file ini"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {stagedStats ? (
               <div className="space-y-3">
@@ -780,32 +779,6 @@ export default function UploadData({
           </div>
  
           <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 space-y-4">
-            {/* List of active files of this type */}
-            {uploadedFiles.filter(f => f.fileType === "clicks").length > 0 && (
-              <div className="space-y-2">
-                <p className="text-[10px] font-extrabold text-slate-450 dark:text-slate-500 uppercase tracking-wider">File Aktif di Database ({uploadedFiles.filter(f => f.fileType === "clicks").length})</p>
-                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                  {uploadedFiles.filter(f => f.fileType === "clicks").map((file) => (
-                    <div key={file.id} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-950/40 border border-slate-150 dark:border-slate-850/60 rounded-xl gap-2">
-                      <div className="flex items-center gap-2 text-xs truncate max-w-[75%]">
-                        <FileText className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                        <div className="truncate font-mono">
-                          <p className="truncate font-bold text-slate-705 dark:text-slate-300" title={file.filename}>{file.filename}</p>
-                          <p className="text-[10px] text-slate-500">{file.rowCount} zone dicocokkan</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleDeleteFile(file.id, file.filename)}
-                        className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded cursor-pointer transition-all"
-                        title="Hapus file ini"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {stagedClicks ? (
               <div className="space-y-3">
@@ -869,32 +842,6 @@ export default function UploadData({
           </div>
  
           <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 space-y-4">
-            {/* List of active files of this type */}
-            {uploadedFiles.filter(f => f.fileType === "shopee_ph").length > 0 && (
-              <div className="space-y-2">
-                <p className="text-[10px] font-extrabold text-slate-450 dark:text-slate-500 uppercase tracking-wider">File Aktif di Database ({uploadedFiles.filter(f => f.fileType === "shopee_ph").length})</p>
-                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                  {uploadedFiles.filter(f => f.fileType === "shopee_ph").map((file) => (
-                    <div key={file.id} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-950/40 border border-slate-150 dark:border-slate-850/60 rounded-xl gap-2">
-                      <div className="flex items-center gap-2 text-xs truncate max-w-[75%]">
-                        <FileText className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-                        <div className="truncate font-mono">
-                          <p className="truncate font-bold text-slate-705 dark:text-slate-300" title={file.filename}>{file.filename}</p>
-                          <p className="text-[10px] text-slate-500">{file.rowCount} baris terbaca</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleDeleteFile(file.id, file.filename)}
-                        className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded cursor-pointer transition-all"
-                        title="Hapus file ini"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {stagedPh ? (
               <div className="space-y-3">
@@ -956,34 +903,8 @@ export default function UploadData({
               Laporan komisi langsung IDR Shopee Indonesia. Memetakan <span className="font-mono text-blue-500 dark:text-blue-400 bg-slate-50 dark:bg-slate-950/40 px-1 py-0.5 rounded">Tag_link1, Komisi Shopee per Pesanan(Rp)</span> secara langsung.
             </p>
           </div>
- 
+
           <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 space-y-4">
-            {/* List of active files of this type */}
-            {uploadedFiles.filter(f => f.fileType === "shopee_id").length > 0 && (
-              <div className="space-y-2">
-                <p className="text-[10px] font-extrabold text-slate-450 dark:text-slate-500 uppercase tracking-wider">File Aktif di Database ({uploadedFiles.filter(f => f.fileType === "shopee_id").length})</p>
-                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                  {uploadedFiles.filter(f => f.fileType === "shopee_id").map((file) => (
-                    <div key={file.id} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-950/40 border border-slate-150 dark:border-slate-850/60 rounded-xl gap-2">
-                      <div className="flex items-center gap-2 text-xs truncate max-w-[75%]">
-                        <FileText className="h-3.5 w-3.5 text-pink-500 shrink-0" />
-                        <div className="truncate font-mono">
-                          <p className="truncate font-bold text-slate-705 dark:text-slate-300" title={file.filename}>{file.filename}</p>
-                          <p className="text-[10px] text-slate-505 dark:text-slate-400 font-mono">{file.rowCount} baris terbaca</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleDeleteFile(file.id, file.filename)}
-                        className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded cursor-pointer transition-all"
-                        title="Hapus file ini"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {stagedId ? (
               <div className="space-y-3">
@@ -1032,9 +953,11 @@ export default function UploadData({
         </div>
  
       </div>
+      )}
 
       {/* Manual Input Form */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm transition-all" id="manual-data-entry-form">
+      {activeSubTab === "manual" && (
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm transition-all" id="manual-data-entry-form">
         <div className="flex items-center gap-2 pb-4 mb-5 border-b border-slate-100 dark:border-slate-800/80">
           <Sparkles className="h-5 w-5 text-blue-500 animate-pulse shrink-0" />
           <div>
@@ -1177,6 +1100,7 @@ export default function UploadData({
           </div>
         </form>
       </div>
+      )}
 
       {/* 5. TABLE: Riwayat Unggahan Laporan / File History registry */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm transition-all overflow-hidden" id="file-history-timeline-section">
@@ -1281,6 +1205,40 @@ export default function UploadData({
           </table>
         </div>
       </div>
+
+      {/* Confirmation modal for resetting all workspace data */}
+      {showResetConfirmation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-sm w-full p-6 shadow-xl space-y-4">
+            <div className="text-center space-y-2">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white uppercase tracking-tight">Kosongkan Semua Data</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Apakah Anda yakin ingin menghapus semua laporan dan mereset total konsolidasi secara permanen? Tindakan ini tidak dapat dibatalkan.
+              </p>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setShowResetConfirmation(false)}
+                className="flex-1 py-2 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-350 text-xs font-bold rounded-xl cursor-pointer transition-all"
+              >
+                Batal
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    await clearAllData();
+                  } finally {
+                    setShowResetConfirmation(false);
+                  }
+                }}
+                className="flex-1 py-2 px-4 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl cursor-pointer transition-all shadow-xs"
+              >
+                Ya, Bersihkan!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

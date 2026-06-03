@@ -66,6 +66,7 @@ export default function Dashboard({
 
   // Filters state
   const [searchQuery, setSearchQuery] = useState("");
+  const [zoneToDelete, setZoneToDelete] = useState<string | null>(null);
   const [filterPlatform, setFilterPlatform] = useState<string>("ALL");
   const [filterMarket, setFilterMarket] = useState<string>("ALL");
   const [minCtr, setMinCtr] = useState<number>(0);
@@ -694,11 +695,7 @@ export default function Dashboard({
                       {onDeleteZone && (
                         <td className="px-6 py-3.5 text-right">
                           <button
-                            onClick={() => {
-                              if (window.confirm(`Apakah Anda yakin ingin menghapus seluruh data untuk Zone ID "${row.zoneId}" secara permanen?`)) {
-                                onDeleteZone(row.zoneId);
-                              }
-                            }}
+                            onClick={() => setZoneToDelete(row.zoneId)}
                             className="p-1 px-2.2 bg-rose-55 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-955/40 text-rose-600 dark:text-rose-400 rounded-lg border border-rose-200 dark:border-rose-900/40 text-[10px] font-bold cursor-pointer transition-all inline-flex items-center gap-1"
                             title="Hapus baris data ini"
                           >
@@ -772,6 +769,43 @@ export default function Dashboard({
         )}
 
       </div>
+
+      {/* Confirmation modal for zone deletion */}
+      {zoneToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-sm w-full p-6 shadow-xl space-y-4">
+            <div className="text-center space-y-2">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white uppercase tracking-tight">Hapus Data Zone Permanen</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Apakah Anda yakin ingin menghapus seluruh data untuk Zone ID <span className="font-mono font-bold text-blue-600 dark:text-blue-400">"{zoneToDelete}"</span> secara permanen dari basis data?
+              </p>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setZoneToDelete(null)}
+                className="flex-1 py-2 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-350 text-xs font-bold rounded-xl cursor-pointer transition-all"
+              >
+                Batal
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    if (onDeleteZone) {
+                      await onDeleteZone(zoneToDelete);
+                    }
+                  } finally {
+                    setZoneToDelete(null);
+                  }
+                }}
+                className="flex-1 py-2 px-4 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl cursor-pointer transition-all shadow-xs"
+              >
+                Ya, Hapus!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
